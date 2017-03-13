@@ -1,5 +1,16 @@
-#include <stdafx.h>
+#include "stdafx.h"
 #include <string.h>
+#include "mylib.h"
+
+#define PASSLENGHT 32
+#define USERLENGHT 32
+#define BUFFSIZE 512
+
+struct client_struct {
+	char buffer[BUFFSIZE];
+	char user_name[USERLENGHT];
+	int state;
+};
 
 char* CodeReference(int code) {
 	char* return_name;

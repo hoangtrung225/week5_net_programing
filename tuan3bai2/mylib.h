@@ -1,3 +1,7 @@
+#define PASSLENGHT 32
+#define USERLENGHT 32
+#define BUFFSIZE 512
+
 //Server respond format [3char: respond code][string: message]
 struct ServerRespondHeader {
 	char code[3];

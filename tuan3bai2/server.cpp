@@ -14,10 +14,8 @@
 
 #define SERVER_ADDR "127.0.0.1"
 #define QUEUE_SIZE 10
-#define BUFFSIZE 512
 #define MAXTRY 5
-#define PASSLENGHT 32
-#define USERLENGHT 32
+
 
 #define DEFAULTUSER "username"
 #define DEFAULTPASS "password"
