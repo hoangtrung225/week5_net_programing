@@ -68,15 +68,7 @@ int main(int argc, char* argv[])
 
 	//receive message from server
 	while (1) {
-		//receive message from server
-		if ((rcvBytes = recv(clientSocket, buffer, BUFF_SIZE, 0)) < 0)
-		{
-			printf("Server close connection terminal shutdown\n");
-			break;
-		}
-
-		//print outloud server message except code number
-		printf("%s\n", buffer + 3);
+		
 
 		//scan user input
 		printf("send to server: ");
@@ -89,6 +81,16 @@ int main(int argc, char* argv[])
 		//terminate if get BYE!
 		if (strncmp(buffer, "BYE!", 4) == 0)
 			break;
+
+		//receive message from server
+		if ((rcvBytes = recv(clientSocket, buffer, BUFF_SIZE, 0)) < 0)
+		{
+			printf("Server close connection terminal shutdown\n");
+			break;
+		}
+
+		//print outloud server message except code number
+		printf("%s\n", buffer + 3);
 	}
 
 	WSACleanup();

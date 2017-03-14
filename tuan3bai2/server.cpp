@@ -1,7 +1,7 @@
 // ConsoleApplication1.cpp : Defines the entry point for the console application.
 //
 
-#include <stdafx.h>
+#include "stdafx.h"
 #include <stdio.h>
 #include <conio.h>
 #include <string.h>
@@ -14,11 +14,7 @@
 
 #define SERVER_ADDR "127.0.0.1"
 #define QUEUE_SIZE 10
-#define MAXTRY 5
 
-
-#define DEFAULTUSER "username"
-#define DEFAULTPASS "password"
 
 unsigned __stdcall fileServe(void *param);
 
@@ -63,134 +59,79 @@ int main(int argc, char** argv) {
 	printf("server started at [%s:%d]\n", SERVER_ADDR, Server_port);
 
 	//new socket to client connect
+	struct client_info_struct clients[FD_SETSIZE];
 	SOCKET conn_sock;
+	fd_set readfds, writefds;
+	sockaddr_in client_addr;
+	int ret, events, client_addr_len;
 
-	sockaddr_in clientAddr;
-	int clientAddrlen = sizeof(clientAddr);
+	for (int i = 0; i < FD_SETSIZE; i++) {
+		memset(&clients[i], 0, sizeof (struct  client_info_struct));
+	}
+	FD_ZERO(&readfds);
+	FD_ZERO(&writefds);
+
+	timeval time_out_interval;
+	time_out_interval.tv_sec = 10;
+	time_out_interval.tv_usec = 0;
 
 	while (true) {
-		conn_sock = accept(listenSock, (sockaddr*)&clientAddr, &clientAddrlen);
-		printf("Accept new connection from :[%s:%d]\n", inet_ntoa(clientAddr.sin_addr), ntohs(clientAddr.sin_port));
-		_beginthreadex(0, 0, fileServe, (void *)conn_sock, 0, 0); //start thread
+		FD_SET(listenSock, &readfds);
+
+		for (int i = 0; i < FD_SETSIZE; i++)
+			if (clients[i].client_fd > 0)
+				FD_SET(clients[i].client_fd, &readfds);
+		writefds = readfds;
+
+		events = select(0, &readfds, 0, 0, 0);
+		if (events < 0) {
+			printf("\nError! CAnnot poll socket: %d", WSAGetLastError);
+		}
+
+		//set newly connect socket into clients array
+		if (FD_ISSET(listenSock, &readfds)) {
+			client_addr_len = sizeof(client_addr);
+			conn_sock = accept(listenSock, (sockaddr*)&client_addr, &client_addr_len);
+			int i;
+
+			printf("Server receive new connection from[%s:%d]\n",
+				inet_ntoa(client_addr.sin_addr), ntohs(client_addr.sin_port));
+			for(i = 0; i < FD_SETSIZE; i++)
+				if (clients[i].client_fd <= 0) {
+					clients[i].client_fd = conn_sock;
+					break;
+				}
+			if (i == FD_SETSIZE)
+				printf("\n Too many clients\n");
+
+			if (--events <= 0)
+				continue;
+		}
+
+		for (int i = 0; i < FD_SETSIZE; i++) {
+			if (clients[i].client_fd <= 0)
+				continue;
+
+			if (FD_ISSET(clients[i].client_fd, &readfds)) {
+				ret = receive_data(clients[i].client_fd, clients[i].client_buffer, BUFFSIZE, 0);
+				if (ret <= 0) {
+					FD_CLR(clients[i].client_fd, &readfds);
+					closesocket(clients[i].client_fd);
+					memset(&clients[i], 0, sizeof(struct client_info_struct));
+				}
+				else if (ret > 0) {
+					process_data(&clients[i]);
+					send_data(clients[i].client_fd, clients[i].client_buffer, BUFFSIZE, 0);
+				}
+			}
+			if (--events <= 0)
+				continue;
+		}
 	}
 	closesocket(listenSock);
 	WSACleanup();
 	return 0;
 }
 
-unsigned __stdcall fileServe(void *param) {
-	char buffer[BUFFSIZE];
-	memset(buffer, '0', BUFFSIZE);
-	SOCKET conn_sock = (SOCKET)param;
-	int returnByte;
-	int attemt_count = 0;
-	int user_is_login = 0;
-	char username[USERLENGHT+1];
-	memset(username, 0, USERLENGHT + 1);
-	char password[PASSLENGHT+1];
-	memset(password, 0, PASSLENGHT + 1);
-	char action_code[5];
 
-	printf("Server accepted connection from client\n");
-	snprintf(buffer, BUFFSIZE, "%dConnection establish login account for service\n", 332);
-	send(conn_sock, buffer, BUFFSIZE, 0);
-
-	//action indentify
-	while (attemt_count < MAXTRY) {
-		//read actioncode
-		recv(conn_sock, buffer, BUFFSIZE, 0);
-		strncpy(action_code, buffer, 4);
-		action_code[4] = '\0';
-
-		memset(password, 0, PASSLENGHT);
-
-		switch (GetClientAction(action_code))
-		{
-		// actioncode is USER
-		case 1:
-			strncpy(username, buffer + 5, USERLENGHT);
-			username[strlen(username)] = '\0';
-			attemt_count++;
-
-			//user try to login while still on session
-			if (user_is_login) {
-				snprintf(buffer, BUFFSIZE, "%dService in user: %s session, to access other account log out first", 230, username);
-				send(conn_sock, buffer, BUFFSIZE, 0);
-				continue;
-			}
-
-			//verify username in database
-			if (strncmp(username, DEFAULTUSER, USERLENGHT) == 0) {
-				//username request match user
-				snprintf(buffer, BUFFSIZE, "%dLog in account: %s! Enter password\n", 331, username);
-				send(conn_sock, buffer, BUFFSIZE, 0);
-				continue;
-			}
-
-			//username not match
-			snprintf(buffer, BUFFSIZE, "%dLogin error: not found user %s\n", 430, username);
-			send(conn_sock, buffer, BUFFSIZE, 0);
-			username[0] = '\0';
-			continue;
-		//action code is PASS
-		case 2:
-			strncpy(password, buffer + 5, PASSLENGHT);
-			password[PASSLENGHT] = '\0';
-			attemt_count++;
-
-			//user send password while still on session
-			if (user_is_login) {
-				snprintf(buffer, BUFFSIZE, "%dService ready to user: %s session", 230, username);
-				send(conn_sock, buffer, BUFFSIZE, 0);
-				continue;
-			}
-
-			//verify password for user in database
-			if (strncmp(password, DEFAULTPASS, PASSLENGHT) == 0 && strncmp(username, DEFAULTUSER, USERLENGHT) == 0) {
-				//password match user's account
-				snprintf(buffer, BUFFSIZE, "%dLog in %s: Successfull! Service ready\n", 230, username);
-				send(conn_sock, buffer, BUFFSIZE, 0);
-
-				//reset attempcount, set user in session variable
-				attemt_count = 0;
-				user_is_login = 1;
-				continue;
-			}
-
-			//password not match
-			snprintf(buffer, BUFFSIZE, "%dLogin error: password not match %s\n", 430, username);
-			send(conn_sock, buffer, BUFFSIZE, 0);
-			continue;
-		//user sell terminate service
-		case 0:
-			printf("Service terminate!\n");
-			closesocket(conn_sock);
-			return 0;
-
-		//log out
-		case 9:
-			//user send logout without being in session
-			if (!user_is_login) {
-				snprintf(buffer, BUFFSIZE, "%dLogout error: User not login\n", 451);
-				send(conn_sock, buffer, BUFFSIZE, 0);
-				continue;
-			}
-
-			//user in session, logout
-			user_is_login = 0;
-			attemt_count = 0;
-			memset(username, 0, USERLENGHT + 1);
-			snprintf(buffer, BUFFSIZE, "%dLogout successful\n", 231);
-			send(conn_sock, buffer, BUFFSIZE, 0);
-			continue;
-		
-		default:
-			strncpy(buffer, "451Command not recognize\n", BUFFSIZE);
-			send(conn_sock, buffer, BUFFSIZE, 0);
-			continue;
-		}
-		
-
-	}
-}
 
